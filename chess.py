@@ -25,12 +25,18 @@ def get_supabase() -> Client:
 supabase = get_supabase()
 
 # --- YARDIMCI FONKSİYONLAR ---
+@st.cache_data(ttl=10)
 def veri_cek(tablo_adi):
     try:
         res = supabase.table(tablo_adi).select("*").execute()
         return pd.DataFrame(res.data)
     except Exception:
         return pd.DataFrame()
+
+@st.cache_data(ttl=30)
+def leaderboard_get():
+    res = supabase.table("users").select("name,points,league,phone").execute()
+    return pd.DataFrame(res.data)
 
 def lig_baslangic_bul():
     simdi = datetime.now()
@@ -140,12 +146,32 @@ def sessiz_otomasyon():
 
 # --- SONUÇ KAYDETME ---
 def sonucu_kaydet_veya_guncelle(match_id, oyuncu_adi, yeni_skor):
-    data = {"match_id": str(match_id), "resulter_player": oyuncu_adi, "result": yeni_skor}
-    try:
-        supabase.table("league").upsert(data).execute()
-    except Exception as e:
-        st.error(f"Kaydetme hatası: {e}")
 
+    mac = supabase.table("matches").select("player1,player2").eq("match_id", match_id).execute()
+
+    if not mac.data:
+        return
+
+    p1 = mac.data[0]["player1"]
+    p2 = mac.data[0]["player2"]
+
+    if oyuncu_adi not in [p1, p2]:
+        return
+    mevcut = supabase.table("league").select("*") \
+    .eq("match_id", match_id) \
+    .eq("resulter_player", oyuncu_adi) \
+    .execute()
+
+    if mevcut.data:
+        return
+
+    data = {
+        "match_id": str(match_id),
+        "resulter_player": oyuncu_adi,
+        "result": yeni_skor
+    }
+
+    supabase.table("league").upsert(data).execute()
 # --- PUAN VE ONAY MANTIĞI ---
 def mac_sonuclandir(match_id, p1, p2, final_status):
     supabase.table("matches").update({"status": final_status}).eq("match_id", match_id).execute()
@@ -182,6 +208,59 @@ def sonuclari_isleme_al(match_id, deadline_str, p1, p2):
         else:
             supabase.table("matches").update({"status": "İPTAL"}).eq("match_id", match_id).execute()
 
+def tie_break_sirala(lig_df, df_matches):
+
+    result = []
+    i = 0
+
+    while i < len(lig_df):
+
+        same = [lig_df.iloc[i]]
+        j = i + 1
+
+        while j < len(lig_df) and lig_df.iloc[j]['points'] == lig_df.iloc[i]['points']:
+            same.append(lig_df.iloc[j])
+            j += 1
+
+        if len(same) == 1:
+            result.append(same[0])
+        else:
+
+            mini = pd.DataFrame(same)
+            players = mini['name'].tolist()
+
+            mini_points = {p:0 for p in players}
+
+            for _, m in df_matches.iterrows():
+
+                p1 = m['player1']
+                p2 = m['player2']
+
+                if p1 in players and p2 in players:
+
+                    status = m['status']
+
+                    if "Galibiyet" in status:
+                        winner = status.split(": ")[1]
+                        mini_points[winner] += GALIBIYET_PUANI
+
+                    elif status == "Berabere":
+                        mini_points[p1] += BERABERLIK_PUANI
+                        mini_points[p2] += BERABERLIK_PUANI
+
+            mini["mini_points"] = mini["name"].map(mini_points)
+
+            mini = mini.sort_values(
+                by=["mini_points","name"],
+                ascending=[False,True]
+            )
+
+            result.extend(mini.to_dict("records"))
+
+        i = j
+
+    return pd.DataFrame(result)
+
 def ligleri_guncelle():
     df_users = veri_cek("users")
     df_matches = veri_cek("matches")
@@ -192,8 +271,9 @@ def ligleri_guncelle():
         if lig_kisileri.empty: continue
 
         # Puanlara göre sırala
-        lig_kisileri = lig_kisileri.sort_values(by="points", ascending=False).reset_index(drop=True)
-
+        lig_kisileri = lig_kisileri.sort_values(by=["points","name"], ascending=[False,True])
+        lig_kisileri = tie_break_sirala(lig_kisileri, df_matches)
+        
         # Aynı puanlılar varsa kendi aralarındaki maçlara bak
         for j in range(len(lig_kisileri)-1):
             if lig_kisileri.loc[j, 'points'] == lig_kisileri.loc[j+1, 'points']:
@@ -221,32 +301,97 @@ def ligleri_guncelle():
             for u in yukselenler['name']:
                 supabase.table("users").update({"league": LIG_ISIMLERI[i+1]}).eq("name", u).execute()
 
+def sezonu_bitir_ve_yenile():
+
+    df_users = veri_cek("users")
+
+    if df_users.empty:
+        return
+
+    # her lig için işlem yap
+    for i, lig_adi in enumerate(LIG_ISIMLERI):
+
+        lig_kisileri = df_users[df_users['league'] == lig_adi].copy()
+
+        if lig_kisileri.empty:
+            continue
+
+        lig_kisileri = lig_kisileri.sort_values(by="points", ascending=False).reset_index(drop=True)
+
+        # DÜŞME
+        if i > 0:
+
+            dusenler = lig_kisileri.tail(KAC_KISI_DUSECEK)
+
+            for u in dusenler['name']:
+                supabase.table("users").update({
+                    "league": LIG_ISIMLERI[i-1]
+                }).eq("name", u).execute()
+
+        # YÜKSELME
+        if i < LIG_SAYISI-1:
+
+            yukselenler = lig_kisileri.head(KAC_KISI_YUKSELECEK)
+
+            for u in yukselenler['name']:
+                supabase.table("users").update({
+                    "league": LIG_ISIMLERI[i+1]
+                }).eq("name", u).execute()
+
+    # PUAN RESET
+    supabase.table("users").update({"points": 0}).neq("name", "").execute()
+
+    # MAÇ RESET
+    supabase.table("matches").delete().neq("match_id", "0").execute()
+
+    # SONUÇ RESET
+    supabase.table("league").delete().neq("match_id", "0").execute()
+
+    # cache temizle
+    st.cache_data.clear()
+
 # --- GİRİŞ VE PANEL ---
 sessiz_otomasyon()
 
 if kalan_sure_hesapla() == "Sezon Bitti!":
-    ligleri_guncelle()
+
+    df_matches = veri_cek("matches")
+
+    # sadece bir kere çalışsın
+    if not df_matches.empty:
+
+        sezonu_bitir_ve_yenile()
+        st.rerun()
 
 if 'giris_yapildi' not in st.session_state:
     st.session_state['giris_yapildi'] = False
 
 if not st.session_state['giris_yapildi']:
     st.title("♟️ Satranç Ligi")
+
     isim = st.text_input("Kullanıcı Adı")
     sifre = st.text_input("Şifre", type="password")
+
     if st.button("Giriş Yap", use_container_width=True):
-        df_u = veri_cek("users")
-        if not df_u.empty:
-            u_match = df_u[(df_u['name'] == isim) & (df_u['password'].astype(str) == str(sifre))]
-            if not u_match.empty:
-                st.session_state.update({'giris_yapildi': True, 'kullanici_adi': isim, 'lig': str(u_match.iloc[0]['league'])})
-                st.rerun()
-            else: st.error("Hatalı bilgiler.")
+
+        res = supabase.table("users").select("*").eq("name", isim).eq("password", sifre).execute()
+        u_match = res.data
+
+        if u_match:
+            st.session_state.update({
+                'giris_yapildi': True,
+                'kullanici_adi': isim,
+                'lig': str(u_match[0]['league'])
+            })
+            st.rerun()
+
+        else:
+            st.error("Hatalı bilgiler.")
 else:
     with st.sidebar:
         st.header("🏆 Liderlik Tablosu")
         secilen_lig = st.selectbox("Ligi Görüntüle:", LIG_ISIMLERI, index=LIG_ISIMLERI.index(st.session_state['lig']))
-        df_all = veri_cek("users")
+        df_all = leaderboard_get()        
         if not df_all.empty:
             lt = df_all[df_all['league'] == secilen_lig].sort_values(by=["points", "name"], ascending=[False, True]).reset_index(drop=True)
             lt.index += 1
@@ -261,7 +406,11 @@ else:
         st.rerun()
     st.divider()
 
-    df_m = veri_cek("matches")
+    res = supabase.table("matches").select("*").or_(
+        f"player1.eq.{st.session_state['kullanici_adi']},player2.eq.{st.session_state['kullanici_adi']}"
+    ).execute()
+
+    df_m = pd.DataFrame(res.data)
     if not df_m.empty:
         # Oyuncunun maçlarını tarihe göre sırala
         bm = df_m[(df_m['player1'] == st.session_state['kullanici_adi']) | (df_m['player2'] == st.session_state['kullanici_adi'])]
@@ -281,6 +430,8 @@ else:
             m_id = str(row['match_id'])
             dl_str = row['deadline']
             start_str = row.get('start_time')
+            if not start_str:
+                continue
             start_date = datetime.fromisoformat(start_str)
             dl_date = datetime.fromisoformat(dl_str)
             kalan_sure = dl_date - datetime.now()
