@@ -381,14 +381,20 @@ if not st.session_state['giris_yapildi']:
         isim = isim.strip()
         sifre = sifre.strip()
 
-        res = supabase.table("users") \
-            .select("*") \
-            .ilike("name", isim) \
-            .execute()
+        # 🔥 TÜM KULLANICILARI ÇEK
+        res = supabase.table("users").select("*").execute()
+        if not res.data:
+            st.error("Veritabanı hatası veya kullanıcı yok")
+            st.stop()
 
-        if res.data:
-            user = res.data[0]
+        user = None
 
+        for u in res.data:
+            if u["name"].strip().lower() == isim.strip().lower():
+                user = u
+                break
+
+        if user:
             if user["password"] == sifre:
                 st.session_state.update({
                     'giris_yapildi': True,
