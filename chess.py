@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime, timedelta
+import hashlib
 
 # --- ⚙️ DEĞİŞTİRİLEBİLİR AYARLAR ---
 LIG_SAYISI = 3
@@ -17,6 +18,9 @@ KAC_KISI_DUSECEK = 1     # Her ligden kaç kişi bir alt lige düşecek
 # --- 1. SUPABASE BAĞLANTI AYARLARI ---
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+def hash_sifre(sifre: str) -> str:
+    return hashlib.sha256(sifre.encode()).hexdigest()
 
 @st.cache_resource
 def get_supabase() -> Client:
@@ -35,7 +39,7 @@ def veri_cek(tablo_adi):
 
 @st.cache_data(ttl=30)
 def leaderboard_get():
-    res = supabase.table("users").select("name,points,league,phone").execute()
+    res = supabase.table("users_public").select("*").execute()
     return pd.DataFrame(res.data)
 
 def lig_baslangic_bul():
@@ -382,7 +386,7 @@ if not st.session_state['giris_yapildi']:
         sifre = sifre.strip()
 
         # 🔥 TÜM KULLANICILARI ÇEK
-        res = supabase.table("users").select("*").execute()
+        res = supabase.table("users").select("name,password,league").execute()
         if not res.data:
             st.error("Veritabanı hatası veya kullanıcı yok")
             st.stop()
@@ -395,7 +399,7 @@ if not st.session_state['giris_yapildi']:
                 break
 
         if user:
-            if user["password"] == sifre:
+            if user["password"] == hash_sifre(sifre):
                 st.session_state.update({
                     'giris_yapildi': True,
                     'kullanici_adi': user["name"],
