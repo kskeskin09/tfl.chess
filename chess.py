@@ -273,7 +273,7 @@ def ligleri_guncelle():
         # Puanlara göre sırala
         lig_kisileri = lig_kisileri.sort_values(by=["points","name"], ascending=[False,True])
         lig_kisileri = tie_break_sirala(lig_kisileri, df_matches)
-        
+
         # Aynı puanlılar varsa kendi aralarındaki maçlara bak
         for j in range(len(lig_kisileri)-1):
             if lig_kisileri.loc[j, 'points'] == lig_kisileri.loc[j+1, 'points']:
@@ -374,19 +374,33 @@ if not st.session_state['giris_yapildi']:
 
     if st.button("Giriş Yap", use_container_width=True):
 
-        res = supabase.table("users").select("*").eq("name", isim).eq("password", sifre).execute()
-        u_match = res.data
+        if not isim or not sifre:
+            st.warning("Boş bırakma")
+            st.stop()
 
-        if u_match:
-            st.session_state.update({
-                'giris_yapildi': True,
-                'kullanici_adi': isim,
-                'lig': str(u_match[0]['league'])
-            })
-            st.rerun()
+        isim = isim.strip()
+        sifre = sifre.strip()
 
+        res = supabase.table("users") \
+            .select("*") \
+            .ilike("name", isim) \
+            .execute()
+
+        if res.data:
+            user = res.data[0]
+
+            if user["password"] == sifre:
+                st.session_state.update({
+                    'giris_yapildi': True,
+                    'kullanici_adi': user["name"],
+                    'lig': str(user['league'])
+                })
+                st.rerun()
+            else:
+                st.error("Şifre yanlış.")
         else:
-            st.error("Hatalı bilgiler.")
+            st.error("Kullanıcı bulunamadı.")
+
 else:
     with st.sidebar:
         st.header("🏆 Liderlik Tablosu")
