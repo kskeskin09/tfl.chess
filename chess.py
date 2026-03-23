@@ -118,9 +118,6 @@ def sessiz_otomasyon():
             # ROUND ROBIN ALGORİTMASI
             rotasyon = oyuncu_listesi[:]
 
-            # ROUND ROBIN ALGORİTMASI
-            rotasyon = oyuncu_listesi[:]
-
             for tur in range(tur_sayisi):
                 for j in range(oyuncu_sayisi // 2):
                     # p1 için sınır kontrolü
@@ -482,124 +479,128 @@ else:
         f"player1.eq.{st.session_state['kullanici_adi']},player2.eq.{st.session_state['kullanici_adi']}"
     ).execute()
 
-    df_m = pd.DataFrame(res.data)
-    if not df_m.empty:
-        # Oyuncunun maçlarını tarihe göre sırala
-        bm = df_m[(df_m['player1'] == st.session_state['kullanici_adi']) | (df_m['player2'] == st.session_state['kullanici_adi'])]
-        bm = bm.sort_values(by="deadline").reset_index(drop=True)
-        
-        st.write("### 📅 Fikstürün")
-        df_bildirimler = veri_cek("league")
-        
-        aktif_mac_var = False
+    df_m = pd.DataFrame(res.data)  # <- burada df_m oluşturuyoruz
 
-        df_all_matches = veri_cek("matches")
+    # BYE maçlarını filtrele
+    bm = df_m[
+        ((df_m['player1'] == st.session_state['kullanici_adi']) | 
+        (df_m['player2'] == st.session_state['kullanici_adi'])) &
+        (df_m['player1'] != "BYE") &
+        (df_m['player2'] != "BYE")
+    ].sort_values(by="deadline").reset_index(drop=True)
 
-        bekleyen_maclar = df_all_matches[df_all_matches['status'] == "Beklemede"]
-        
-        if not bekleyen_maclar.empty:
-            for _, m in bekleyen_maclar.iterrows():
-                sonuclari_isleme_al(
-                    m['match_id'],
-                    m['deadline'],
-                    m['player1'],
-                    m['player2']
-                )
+    st.write("### 📅 Fikstürün")
+    df_bildirimler = veri_cek("league")
+    
+    aktif_mac_var = False
 
-        for _, row in bm.iterrows():
-            rakip = row['player2'] if row['player1'] == st.session_state['kullanici_adi'] else row['player1']
-            rakip_phone = ""
-            if not df_all.empty:
-                phone_row = df_all[df_all['name'] == rakip]
-                if not phone_row.empty and 'phone' in phone_row.columns:
-                    rakip_phone = phone_row.iloc[0]['phone']
-            durum = str(row['status']).strip()
-            if durum != "Beklemede":
-                continue
+    df_all_matches = veri_cek("matches")
 
-            m_id = str(row['match_id'])
-            round_no = int(m_id[2:4])
-            dl_str = row['deadline']
-            start_str = row.get('start_time')
-            if not start_str:
-                continue
-            start_date = datetime.fromisoformat(start_str)
-            dl_date = datetime.fromisoformat(dl_str)
-            kalan_sure = dl_date - datetime.now()
+    bekleyen_maclar = df_all_matches[df_all_matches['status'] == "Beklemede"]
+    
+    if not bekleyen_maclar.empty:
+        for _, m in bekleyen_maclar.iterrows():
+            sonuclari_isleme_al(
+                m['match_id'],
+                m['deadline'],
+                m['player1'],
+                m['player2']
+            )
 
-            ligdeki_tur_maclari = df_all_matches[
-                (df_all_matches['league'] == row['league']) &
-                (df_all_matches['match_id'].str[2:4].astype(int) == round_no)
-            ]
+    for _, row in bm.iterrows():
+        rakip = row['player2'] if row['player1'] == st.session_state['kullanici_adi'] else row['player1']
+        rakip_phone = ""
+        if not df_all.empty:
+            phone_row = df_all[df_all['name'] == rakip]
+            if not phone_row.empty and 'phone' in phone_row.columns:
+                rakip_phone = phone_row.iloc[0]['phone']
+        durum = str(row['status']).strip()
+        if durum != "Beklemede":
+            continue
 
-            kullanici_bu_turda_var_mi = not ligdeki_tur_maclari[
-                (ligdeki_tur_maclari['player1'] == st.session_state['kullanici_adi']) |
-                (ligdeki_tur_maclari['player2'] == st.session_state['kullanici_adi'])
-            ].empty
+        m_id = str(row['match_id'])
+        round_no = int(m_id[2:4])
+        dl_str = row['deadline']
+        start_str = row.get('start_time')
+        if not start_str:
+            continue
+        start_date = datetime.fromisoformat(start_str)
+        dl_date = datetime.fromisoformat(dl_str)
+        kalan_sure = dl_date - datetime.now()
 
-            if not kullanici_bu_turda_var_mi:
-                continue
+        ligdeki_tur_maclari = df_all_matches[
+            (df_all_matches['league'] == row['league']) &
+            (df_all_matches['match_id'].str[2:4].astype(int) == round_no)
+        ]
 
-            onceki_turlar = df_all_matches[
-                (df_all_matches['league'] == row['league']) &
-                (df_all_matches['match_id'].str[2:4].astype(int) < round_no)
-            ]
-            now = datetime.now()
+        kullanici_bu_turda_var_mi = not ligdeki_tur_maclari[
+            (ligdeki_tur_maclari['player1'] == st.session_state['kullanici_adi']) |
+            (ligdeki_tur_maclari['player2'] == st.session_state['kullanici_adi'])
+        ].empty
 
-            tamamlanmamis = onceki_turlar[
-                (onceki_turlar['status'] == "Beklemede") &
-                (onceki_turlar['deadline'].apply(lambda x: datetime.fromisoformat(x)) > now)
-            ]
+        if not kullanici_bu_turda_var_mi:
+            continue
 
-            if not tamamlanmamis.empty:
-                # Önceki tur bitmeden açılmasın
-                with st.container(border=True):
-                    col_i, col_a = st.columns([2, 1])
-                    col_i.warning("🔒 Önceki tur bitmeden açılamaz")
-                    col_a.warning("⛔ Tur kilitli")
-                continue  # bu maç için diğer kodları atla
+        onceki_turlar = df_all_matches[
+            (df_all_matches['league'] == row['league']) &
+            (df_all_matches['match_id'].str[2:4].astype(int) < round_no)
+        ]
+        now = datetime.now()
+
+        tamamlanmamis = onceki_turlar[
+            (onceki_turlar['status'] == "Beklemede") &
+            (onceki_turlar['deadline'].apply(lambda x: datetime.fromisoformat(x)) > now)
+        ]
+
+        if not tamamlanmamis.empty:
+            # Önceki tur bitmeden açılmasın
             with st.container(border=True):
                 col_i, col_a = st.columns([2, 1])
-                
-                # Sadece ilk Beklemede olan maç "Aktif" sayılır
-                now = datetime.now()
+                col_i.warning("🔒 Önceki tur bitmeden açılamaz")
+                col_a.warning("⛔ Tur kilitli")
+            continue  # bu maç için diğer kodları atla
+        with st.container(border=True):
+            col_i, col_a = st.columns([2, 1])
+            
+            # Sadece ilk Beklemede olan maç "Aktif" sayılır
+            now = datetime.now()
 
-                if now < start_date:
+            if now < start_date:
 
-                    kalan = start_date - now
-                    col_i.warning(f"⏳ Başlamasına: {kalan_sure_format(kalan)}")
-                    col_a.warning("🔒 Henüz başlamadı")
+                kalan = start_date - now
+                col_i.warning(f"⏳ Başlamasına: {kalan_sure_format(kalan)}")
+                col_a.warning("🔒 Henüz başlamadı")
 
-                elif start_date <= now <= dl_date and durum == "Beklemede":
+            elif start_date <= now <= dl_date and durum == "Beklemede":
 
-                    if aktif_mac_var:
-                        col_i.warning("🔒 Sıradaki maçını tamamla")
-                        col_a.warning("⛔ Kilitli")
-                        continue
+                if aktif_mac_var:
+                    col_i.warning("🔒 Sıradaki maçını tamamla")
+                    col_a.warning("⛔ Kilitli")
+                    continue
 
-                    aktif_mac_var = True
+                aktif_mac_var = True
 
-                    kalan = dl_date - now
-                    col_i.error(f"⌛ Kalan Süre: {kalan_sure_format(kalan)}")
+                kalan = dl_date - now
+                col_i.error(f"⌛ Kalan Süre: {kalan_sure_format(kalan)}")
 
-                    zaten = not df_bildirimler[
-                        (df_bildirimler['match_id'].astype(str) == m_id) &
-                        (df_bildirimler['resulter_player'] == st.session_state['kullanici_adi'])
-                    ].empty if not df_bildirimler.empty else False
+                zaten = not df_bildirimler[
+                    (df_bildirimler['match_id'].astype(str) == m_id) &
+                    (df_bildirimler['resulter_player'] == st.session_state['kullanici_adi'])
+                ].empty if not df_bildirimler.empty else False
 
-                    if not zaten:
-                        skor = col_a.selectbox("Sonuç:", ["-", "Kazandım", "Kaybettim", "Berabere"], key=f"s_{m_id}")
-                        if col_a.button("Kaydet", key=f"b_{m_id}"):
+                if not zaten:
+                    skor = col_a.selectbox("Sonuç:", ["-", "Kazandım", "Kaybettim", "Berabere"], key=f"s_{m_id}")
+                    if col_a.button("Kaydet", key=f"b_{m_id}"):
 
-                            if skor != "-":
-                                sonucu_kaydet_veya_guncelle(m_id, st.session_state['kullanici_adi'], skor)
-                                sonuclari_isleme_al(m_id, dl_str, row['player1'], row['player2'])
-                                st.rerun()
-                    else:
-                        col_a.info("⌛ Bekleniyor...")
-  
+                        if skor != "-":
+                            sonucu_kaydet_veya_guncelle(m_id, st.session_state['kullanici_adi'], skor)
+                            sonuclari_isleme_al(m_id, dl_str, row['player1'], row['player2'])
+                            st.rerun()
                 else:
+                    col_a.info("⌛ Bekleniyor...")
 
-                    col_i.warning("⏱ Süre doldu")
+            else:
 
-                col_i.write(f"⚔️ **Rakip:** {rakip} | 📞 {rakip_phone}  \n📌 **Durum:** `{durum}`")
+                col_i.warning("⏱ Süre doldu")
+
+            col_i.write(f"⚔️ **Rakip:** {rakip} | 📞 {rakip_phone}  \n📌 **Durum:** `{durum}`")
