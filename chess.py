@@ -143,39 +143,53 @@ def sessiz_otomasyon():
                     })
 
                 # rotasyon (ilk oyuncu sabit)
-                rotasyon = [rotasyon[0]] + [rotasyon[-1]] + rotasyon[1:-1]  
+                rotasyon = [rotasyon[0]] + rotasyon[1:-1][-1:] + rotasyon[1:-1][:-1]
                       
         if yeni_maclar:
             supabase.table("matches").insert(yeni_maclar).execute()
 
 # --- SONUÇ KAYDETME ---
 def sonucu_kaydet_veya_guncelle(match_id, oyuncu_adi, yeni_skor):
+    # 1️⃣ match_id format kontrolü
+    if not isinstance(match_id, str) or "vs" not in match_id:
+        return  # geçersiz match_id
 
-    mac = supabase.table("matches").select("player1,player2").eq("match_id", match_id).execute()
+    # 2️⃣ Skor seçeneklerini sınırla
+    if yeni_skor not in ["Kazandım", "Kaybettim", "Berabere"]:
+        return  # geçersiz skor
 
+    # 3️⃣ Maç verisini çek ve yetki kontrolü
+    mac = supabase.table("matches").select("player1,player2,status").eq("match_id", match_id).execute()
     if not mac.data:
-        return
+        return  # maç yok
 
-    p1 = mac.data[0]["player1"]
-    p2 = mac.data[0]["player2"]
+    p1, p2, status = mac.data[0]['player1'], mac.data[0]['player2'], mac.data[0]['status']
 
+    # 4️⃣ Sadece o maçın oyuncuları işlem yapabilir
     if oyuncu_adi not in [p1, p2]:
         return
-    mevcut = supabase.table("league").select("*") \
-    .eq("match_id", match_id) \
-    .eq("resulter_player", oyuncu_adi) \
-    .execute()
 
+    # 5️⃣ Sadece Beklemede olan maç güncellenebilir
+    if status != "Beklemede":
+        return
+
+    # 6️⃣ Mevcut sonuç var mı kontrolü
+    mevcut = supabase.table("league").select("*") \
+        .eq("match_id", match_id) \
+        .eq("resulter_player", oyuncu_adi) \
+        .execute()
     if mevcut.data:
         return
 
-    data = {
-        "match_id": str(match_id),
+    # 7️⃣ Skoru kaydet
+    supabase.table("league").upsert({
+        "match_id": match_id,
         "resulter_player": oyuncu_adi,
         "result": yeni_skor
-    }
+    }).execute()
 
-    supabase.table("league").upsert(data).execute()
+    st.cache_data.clear()
+
 # --- PUAN VE ONAY MANTIĞI ---
 def mac_sonuclandir(match_id, p1, p2, final_status):
     supabase.table("matches").update({"status": final_status}).eq("match_id", match_id).execute()
@@ -188,12 +202,17 @@ def mac_sonuclandir(match_id, p1, p2, final_status):
         for ad in [p1, p2]:
             mevcut = float(df_u[df_u['name'] == ad]['points'].values[0])
             supabase.table("users").update({"points": mevcut + BERABERLIK_PUANI}).eq("name", ad).execute()
+    st.cache_data.clear()
 
 def sonuclari_isleme_al(match_id, deadline_str, p1, p2):
+    mac = supabase.table("matches").select("status").eq("match_id", match_id).execute()
+
+    if mac.data and mac.data[0]["status"] != "Beklemede":
+        return
     bildirimler = veri_cek("league")
     ilgili = bildirimler[bildirimler['match_id'].astype(str) == str(match_id)] if not bildirimler.empty else pd.DataFrame()
     
-    if len(ilgili) >= 2:
+    if len(ilgili) == 2:
         res1, res2 = ilgili.iloc[0], ilgili.iloc[1]
         s1, s2 = res1['result'], res2['result']
         status = ""
@@ -284,14 +303,31 @@ def ligleri_guncelle():
                 p1 = lig_kisileri.loc[j, 'name']
                 p2 = lig_kisileri.loc[j+1, 'name']
                 # İkili maçlar
-                karsilasmalar = df_matches[((df_matches['player1']==p1) & (df_matches['player2']==p2)) |
-                                           ((df_matches['player1']==p2) & (df_matches['player2']==p1))]
-                if not karsilasmalar.empty:
-                    p1_skor = sum([GALIBIYET_PUANI if r['resulter_player']==p1 else BERABERLIK_PUANI if r['result']=="Berabere" else 0
-                                   for _, r in karsilasmalar.iterrows()])
-                    p2_skor = sum([GALIBIYET_PUANI if r['resulter_player']==p2 else BERABERLIK_PUANI if r['result']=="Berabere" else 0
-                                   for _, r in karsilasmalar.iterrows()])
-                    if p2_skor > p1_skor:
+                df_results = veri_cek("league")
+
+                df_matches = veri_cek("matches")
+
+                karsilasmalar = df_matches[
+                    ((df_matches['player1'] == p1) & (df_matches['player2'] == p2)) |
+                    ((df_matches['player1'] == p2) & (df_matches['player2'] == p1))
+                ]
+
+                p1_skor = 0
+                p2_skor = 0
+
+                for _, m in karsilasmalar.iterrows():
+                    status = m['status']
+
+                    if "Galibiyet" in status:
+                        kazanan = status.split(": ")[1]
+                        if kazanan == p1:
+                            p1_skor += GALIBIYET_PUANI
+                        elif kazanan == p2:
+                            p2_skor += GALIBIYET_PUANI
+
+                    elif status == "Berabere":
+                        p1_skor += BERABERLIK_PUANI
+                        p2_skor += BERABERLIK_PUANI
                         # Swap sıralama
                         lig_kisileri.loc[[j, j+1]] = lig_kisileri.loc[[j+1, j]].values
 
@@ -363,7 +399,7 @@ if kalan_sure_hesapla() == "Sezon Bitti!":
 
     # sadece bir kere çalışsın
     if not df_matches.empty:
-
+        ligleri_guncelle()
         sezonu_bitir_ve_yenile()
         st.rerun()
 
@@ -443,6 +479,21 @@ else:
         st.write("### 📅 Fikstürün")
         df_bildirimler = veri_cek("league")
         
+        aktif_mac_var = False
+
+        df_all_matches = veri_cek("matches")
+
+        bekleyen_maclar = df_all_matches[df_all_matches['status'] == "Beklemede"]
+        
+        if not bekleyen_maclar.empty:
+            for _, m in bekleyen_maclar.iterrows():
+                sonuclari_isleme_al(
+                    m['match_id'],
+                    m['deadline'],
+                    m['player1'],
+                    m['player2']
+                )
+
         for _, row in bm.iterrows():
             rakip = row['player2'] if row['player1'] == st.session_state['kullanici_adi'] else row['player1']
             rakip_phone = ""
@@ -451,7 +502,11 @@ else:
                 if not phone_row.empty and 'phone' in phone_row.columns:
                     rakip_phone = phone_row.iloc[0]['phone']
             durum = str(row['status']).strip()
+            if durum != "Beklemede":
+                continue
+
             m_id = str(row['match_id'])
+            round_no = int(m_id[2:4])
             dl_str = row['deadline']
             start_str = row.get('start_time')
             if not start_str:
@@ -459,10 +514,30 @@ else:
             start_date = datetime.fromisoformat(start_str)
             dl_date = datetime.fromisoformat(dl_str)
             kalan_sure = dl_date - datetime.now()
-            
-            round_no = int(m_id[2:4])  # match_id'den tur numarasını al
-            onceki_turlar = df_m[df_m['match_id'].str[2:4].astype(int) < round_no]
-            tamamlanmamis = onceki_turlar[onceki_turlar['status'] == "Beklemede"]
+
+            ligdeki_tur_maclari = df_all_matches[
+                (df_all_matches['league'] == row['league']) &
+                (df_all_matches['match_id'].str[2:4].astype(int) == round_no)
+            ]
+
+            kullanici_bu_turda_var_mi = not ligdeki_tur_maclari[
+                (ligdeki_tur_maclari['player1'] == st.session_state['kullanici_adi']) |
+                (ligdeki_tur_maclari['player2'] == st.session_state['kullanici_adi'])
+            ].empty
+
+            if not kullanici_bu_turda_var_mi:
+                continue
+
+            onceki_turlar = df_all_matches[
+                (df_all_matches['league'] == row['league']) &
+                (df_all_matches['match_id'].str[2:4].astype(int) < round_no)
+            ]
+            now = datetime.now()
+
+            tamamlanmamis = onceki_turlar[
+                (onceki_turlar['status'] == "Beklemede") &
+                (onceki_turlar['deadline'].apply(lambda x: datetime.fromisoformat(x)) > now)
+            ]
 
             if not tamamlanmamis.empty:
                 # Önceki tur bitmeden açılmasın
@@ -475,7 +550,6 @@ else:
                 col_i, col_a = st.columns([2, 1])
                 
                 # Sadece ilk Beklemede olan maç "Aktif" sayılır
-                is_aktif = False
                 now = datetime.now()
 
                 if now < start_date:
@@ -484,7 +558,14 @@ else:
                     col_i.warning(f"⏳ Başlamasına: {kalan_sure_format(kalan)}")
                     col_a.warning("🔒 Henüz başlamadı")
 
-                elif start_date <= now <= dl_date:
+                elif start_date <= now <= dl_date and durum == "Beklemede":
+
+                    if aktif_mac_var:
+                        col_i.warning("🔒 Sıradaki maçını tamamla")
+                        col_a.warning("⛔ Kilitli")
+                        continue
+
+                    aktif_mac_var = True
 
                     kalan = dl_date - now
                     col_i.error(f"⌛ Kalan Süre: {kalan_sure_format(kalan)}")
@@ -504,7 +585,7 @@ else:
                                 st.rerun()
                     else:
                         col_a.info("⌛ Bekleniyor...")
-
+  
                 else:
 
                     col_i.warning("⏱ Süre doldu")
