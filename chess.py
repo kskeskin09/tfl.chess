@@ -118,20 +118,27 @@ def sessiz_otomasyon():
             # ROUND ROBIN ALGORİTMASI
             rotasyon = oyuncu_listesi[:]
 
+            # ROUND ROBIN ALGORİTMASI
+            rotasyon = oyuncu_listesi[:]
+
             for tur in range(tur_sayisi):
                 for j in range(oyuncu_sayisi // 2):
+                    # p1 için sınır kontrolü
+                    if j >= len(rotasyon):
+                        continue
                     p1 = rotasyon[j]
+
+                    # p2 için sınır kontrolü
                     p2_index = oyuncu_sayisi - 1 - j
-                    
-                    # rotasyon listesi kısa ise atla
                     if p2_index >= len(rotasyon):
                         continue
-                    
                     p2 = rotasyon[p2_index]
 
                     # BYE varsa maç oluşturma
                     if "BYE" in (p1, p2):
                         continue
+
+        # ... maç ekleme kodu ...
 
                     m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{p1}vs{p2}"
                     start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
