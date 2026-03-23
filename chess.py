@@ -118,17 +118,28 @@ def sessiz_otomasyon():
             # ROUND ROBIN ALGORİTMASI
             rotasyon = oyuncu_listesi[:]
 
-            # 🔹 Her oyuncu her oyuncuyla bir maç oynayacak
-            for j in range(len(oyuncular)):
-                for k in range(j + 1, len(oyuncular)):
-                    p1 = oyuncular[j]
-                    p2 = oyuncular[k]
+            for tur in range(tur_sayisi):
+                for j in range(oyuncu_sayisi // 2):
+                    # p1 için sınır kontrolü
+                    if j >= len(rotasyon):
+                        continue
+                    p1 = rotasyon[j]
 
-                    # Başlangıç ve bitiş zamanı
-                    start_time = lig_baslangici + timedelta(hours=len(yeni_maclar)*2)  # her maç 2 saat aralıklı
-                    deadline = start_time + timedelta(hours=2)
+                    # p2 için sınır kontrolü
+                    p2_index = oyuncu_sayisi - 1 - j
+                    if p2_index >= len(rotasyon):
+                        continue
+                    p2 = rotasyon[p2_index]
 
-                    m_id = f"{str(i).zfill(2)}{str(j+1).zfill(2)}{p1}vs{p2}"
+                    # BYE varsa maç oluşturma
+                    if "BYE" in (p1, p2):
+                        continue
+
+        # ... maç ekleme kodu ...
+
+                    m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{p1}vs{p2}"
+                    start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
+                    deadline = start_time + timedelta(hours=mac_basi_saat)
 
                     yeni_maclar.append({
                         "match_id": m_id,
@@ -136,9 +147,12 @@ def sessiz_otomasyon():
                         "player2": p2,
                         "league": lig_adi,
                         "status": "Beklemede",
-                        "start_time": start_time.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S"),
-                        "deadline": deadline.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+                        "start_time": start_time.isoformat(),
+                        "deadline": deadline.isoformat()
                     })
+
+                # rotasyon (ilk oyuncu sabit)
+                rotasyon = [rotasyon[0]] + rotasyon[1:-1][-1:] + rotasyon[1:-1][:-1]
                       
         if yeni_maclar:
             supabase.table("matches").insert(yeni_maclar).execute()
@@ -402,7 +416,7 @@ if 'giris_yapildi' not in st.session_state:
     st.session_state['giris_yapildi'] = False
 
 if not st.session_state['giris_yapildi']:
-    st.title("♟️ Satranç Ligi a")
+    st.title("♟️ Satranç Ligi")
 
     isim = st.text_input("Kullanıcı Adı")
     sifre = st.text_input("Şifre", type="password")
@@ -462,22 +476,17 @@ else:
     st.divider()
 
     res = supabase.table("matches").select("*").or_(
-        f"player1.eq.'{st.session_state['kullanici_adi']}',player2.eq.'{st.session_state['kullanici_adi']}'"
+        f"player1.eq.{st.session_state['kullanici_adi']},player2.eq.{st.session_state['kullanici_adi']}"
     ).execute()
 
     df_m = pd.DataFrame(res.data)  # <- burada df_m oluşturuyoruz
-    if not df_m.empty:
-        # BYE maçlarını ve Beklemede olmayan maçları filtrele
-        df_m = df_m[
-            (df_m['player1'] != "BYE") &
-            (df_m['player2'] != "BYE") &
-            (df_m['status'] == "Beklemede")
-    ]
 
     # BYE maçlarını filtrele
     bm = df_m[
-        (df_m['player1'] == st.session_state['kullanici_adi']) |
-        (df_m['player2'] == st.session_state['kullanici_adi'])
+        ((df_m['player1'] == st.session_state['kullanici_adi']) | 
+        (df_m['player2'] == st.session_state['kullanici_adi'])) &
+        (df_m['player1'] != "BYE") &
+        (df_m['player2'] != "BYE")
     ].sort_values(by="deadline").reset_index(drop=True)
 
     st.write("### 📅 Fikstürün")
@@ -524,14 +533,12 @@ else:
             (df_all_matches['match_id'].str[2:4].astype(int) == round_no)
         ]
 
-        # Kullanıcının o turda maçı var mı
         kullanici_bu_turda_var_mi = not ligdeki_tur_maclari[
             (ligdeki_tur_maclari['player1'] == st.session_state['kullanici_adi']) |
             (ligdeki_tur_maclari['player2'] == st.session_state['kullanici_adi'])
         ].empty
 
         if not kullanici_bu_turda_var_mi:
-            # Bu tur BYE turu → kullanıcıya gösterme, sıradaki turu aktif göster
             continue
 
         onceki_turlar = df_all_matches[
