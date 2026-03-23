@@ -119,10 +119,15 @@ def sessiz_otomasyon():
             rotasyon = oyuncu_listesi[:]
 
             for tur in range(tur_sayisi):
-                
                 for j in range(oyuncu_sayisi // 2):
                     p1 = rotasyon[j]
-                    p2 = rotasyon[oyuncu_sayisi - 1 - j]
+                    p2_index = oyuncu_sayisi - 1 - j
+                    
+                    # rotasyon listesi kısa ise atla
+                    if p2_index >= len(rotasyon):
+                        continue
+                    
+                    p2 = rotasyon[p2_index]
 
                     # BYE varsa maç oluşturma
                     if "BYE" in (p1, p2):
