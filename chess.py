@@ -148,8 +148,8 @@ def sessiz_otomasyon():
                         "player2": p2,
                         "league": lig_adi,
                         "status": "Beklemede",
-                        "start_time": start_time.isoformat(),
-                        "deadline": deadline.isoformat()
+                        "start_time": start_time.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S"),
+                        "deadline": deadline.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
                     })
 
                 # rotasyon (ilk oyuncu sabit)
