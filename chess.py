@@ -118,29 +118,17 @@ def sessiz_otomasyon():
             # ROUND ROBIN ALGORİTMASI
             rotasyon = oyuncu_listesi[:]
 
-            for tur in range(tur_sayisi):
-                for j in range(oyuncu_sayisi // 2):
-                    # p1 için sınır kontrolü
-                    if j >= len(rotasyon):
-                        continue
-                    p1 = rotasyon[j]
+            # 🔹 Her oyuncu her oyuncuyla bir maç oynayacak
+            for j in range(len(oyuncular)):
+                for k in range(j + 1, len(oyuncular)):
+                    p1 = oyuncular[j]
+                    p2 = oyuncular[k]
 
-                    # p2 için sınır kontrolü
-                    p2_index = oyuncu_sayisi - 1 - j
-                    if p2_index >= len(rotasyon):
-                        continue
-                    p2 = rotasyon[p2_index]
+                    # Başlangıç ve bitiş zamanı
+                    start_time = lig_baslangici + timedelta(hours=len(yeni_maclar)*2)  # her maç 2 saat aralıklı
+                    deadline = start_time + timedelta(hours=2)
 
-                    # BYE varsa maç oluşturma
-                    if "BYE" in (p1, p2):
-                        continue
-                        
-
-        # ... maç ekleme kodu ...
-
-                    m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{p1}vs{p2}"
-                    start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
-                    deadline = start_time + timedelta(hours=mac_basi_saat)
+                    m_id = f"{str(i).zfill(2)}{str(j+1).zfill(2)}{p1}vs{p2}"
 
                     yeni_maclar.append({
                         "match_id": m_id,
@@ -151,9 +139,6 @@ def sessiz_otomasyon():
                         "start_time": start_time.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S"),
                         "deadline": deadline.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
                     })
-
-                # rotasyon (ilk oyuncu sabit)
-                rotasyon = [rotasyon[0]] + rotasyon[1:-1][-1:] + rotasyon[1:-1][:-1]
                       
         if yeni_maclar:
             supabase.table("matches").insert(yeni_maclar).execute()
