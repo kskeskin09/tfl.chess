@@ -134,6 +134,7 @@ def sessiz_otomasyon():
                     # BYE varsa maç oluşturma
                     if "BYE" in (p1, p2):
                         continue
+                        
 
         # ... maç ekleme kodu ...
 
@@ -483,10 +484,8 @@ else:
 
     # BYE maçlarını filtrele
     bm = df_m[
-        ((df_m['player1'] == st.session_state['kullanici_adi']) | 
-        (df_m['player2'] == st.session_state['kullanici_adi'])) &
-        (df_m['player1'] != "BYE") &
-        (df_m['player2'] != "BYE")
+        (df_m['player1'] == st.session_state['kullanici_adi']) |
+        (df_m['player2'] == st.session_state['kullanici_adi'])
     ].sort_values(by="deadline").reset_index(drop=True)
 
     st.write("### 📅 Fikstürün")
@@ -533,14 +532,16 @@ else:
             (df_all_matches['match_id'].str[2:4].astype(int) == round_no)
         ]
 
+        # Kullanıcının o turda maçı var mı
         kullanici_bu_turda_var_mi = not ligdeki_tur_maclari[
             (ligdeki_tur_maclari['player1'] == st.session_state['kullanici_adi']) |
             (ligdeki_tur_maclari['player2'] == st.session_state['kullanici_adi'])
         ].empty
 
         if not kullanici_bu_turda_var_mi:
+            # Bu tur BYE turu → kullanıcıya gösterme, sıradaki turu aktif göster
             continue
-
+        
         onceki_turlar = df_all_matches[
             (df_all_matches['league'] == row['league']) &
             (df_all_matches['match_id'].str[2:4].astype(int) < round_no)
