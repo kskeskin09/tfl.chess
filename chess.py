@@ -402,7 +402,7 @@ if 'giris_yapildi' not in st.session_state:
     st.session_state['giris_yapildi'] = False
 
 if not st.session_state['giris_yapildi']:
-    st.title("♟️ Satranç Ligi")
+    st.title("♟️ Satranç Ligi a")
 
     isim = st.text_input("Kullanıcı Adı")
     sifre = st.text_input("Şifre", type="password")
@@ -462,7 +462,7 @@ else:
     st.divider()
 
     res = supabase.table("matches").select("*").or_(
-        f"player1.eq.{st.session_state['kullanici_adi']},player2.eq.{st.session_state['kullanici_adi']}"
+        f"player1.eq.'{st.session_state['kullanici_adi']}',player2.eq.'{st.session_state['kullanici_adi']}'"
     ).execute()
 
     df_m = pd.DataFrame(res.data)  # <- burada df_m oluşturuyoruz
