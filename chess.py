@@ -481,6 +481,13 @@ else:
     ).execute()
 
     df_m = pd.DataFrame(res.data)  # <- burada df_m oluşturuyoruz
+    if not df_m.empty:
+        # BYE maçlarını ve Beklemede olmayan maçları filtrele
+        df_m = df_m[
+            (df_m['player1'] != "BYE") &
+            (df_m['player2'] != "BYE") &
+            (df_m['status'] == "Beklemede")
+    ]
 
     # BYE maçlarını filtrele
     bm = df_m[
@@ -541,7 +548,7 @@ else:
         if not kullanici_bu_turda_var_mi:
             # Bu tur BYE turu → kullanıcıya gösterme, sıradaki turu aktif göster
             continue
-        
+
         onceki_turlar = df_all_matches[
             (df_all_matches['league'] == row['league']) &
             (df_all_matches['match_id'].str[2:4].astype(int) < round_no)
