@@ -113,7 +113,8 @@ def sessiz_otomasyon():
                 tur_sayisi = oyuncu_sayisi - 1
 
             # TUR BAŞI SÜRE
-            mac_basi_saat = (LIG_SURESI_GUN * 24) / tur_sayisi
+            toplam_saat = LIG_SURESI_GUN * 24
+            mac_basi_saat = max(1, toplam_saat // tur_sayisi)
 
             # ROUND ROBIN ALGORİTMASI
             rotasyon = oyuncu_listesi[:]
@@ -133,6 +134,22 @@ def sessiz_otomasyon():
 
                     # BYE varsa maç oluşturma
                     if "BYE" in (p1, p2):
+                        oyuncu = p1 if p2 == "BYE" else p2
+
+                        m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{oyuncu}BYE"
+
+                        start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
+                        deadline = start_time + timedelta(hours=mac_basi_saat)
+
+                        yeni_maclar.append({
+                            "match_id": m_id,
+                            "player1": oyuncu,
+                            "player2": "BYE",
+                            "league": lig_adi,
+                            "status": "BYE",
+                            "start_time": start_time.isoformat(),
+                            "deadline": deadline.isoformat()
+                        })
                         continue
 
         # ... maç ekleme kodu ...
@@ -398,6 +415,7 @@ def sezonu_bitir_ve_yenile():
 
     # cache temizle
     st.cache_data.clear()
+    sessiz_otomasyon()  
 
 # --- GİRİŞ VE PANEL ---
 sessiz_otomasyon()
@@ -481,12 +499,9 @@ else:
 
     df_m = pd.DataFrame(res.data)  # <- burada df_m oluşturuyoruz
 
-    # BYE maçlarını filtrele
     bm = df_m[
         ((df_m['player1'] == st.session_state['kullanici_adi']) | 
-        (df_m['player2'] == st.session_state['kullanici_adi'])) &
-        (df_m['player1'] != "BYE") &
-        (df_m['player2'] != "BYE")
+        (df_m['player2'] == st.session_state['kullanici_adi']))
     ].sort_values(by="deadline").reset_index(drop=True)
 
     st.write("### 📅 Fikstürün")
@@ -496,7 +511,9 @@ else:
 
     df_all_matches = veri_cek("matches")
 
-    bekleyen_maclar = df_all_matches[df_all_matches['status'] == "Beklemede"]
+    bekleyen_maclar = df_all_matches[
+        (df_all_matches['status'] == "Beklemede")
+    ]
     
     if not bekleyen_maclar.empty:
         for _, m in bekleyen_maclar.iterrows():
@@ -508,6 +525,10 @@ else:
             )
 
     for _, row in bm.iterrows():
+        if row['status'] == "BYE":
+            with st.container(border=True):
+                st.info("Bu tur PAS geçiyorsun (puanın değişmeyecek)")
+            continue
         rakip = row['player2'] if row['player1'] == st.session_state['kullanici_adi'] else row['player1']
         rakip_phone = ""
         if not df_all.empty:
