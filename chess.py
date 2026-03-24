@@ -534,7 +534,7 @@ else:
     for _, row in bm.iterrows():
         if row['status'] == "BYE":
             with st.container(border=True):
-                st.info("Bu tur PAS geçiyorsun (puanın değişmeyecek)")
+                st.info("Bu tur PAS geçeceksin (puanın değişmeyecek)")
             continue
         rakip = row['player2'] if row['player1'] == st.session_state['kullanici_adi'] else row['player1']
         rakip_phone = ""
