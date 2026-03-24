@@ -65,9 +65,12 @@ def kalan_sure_hesapla():
 def sessiz_otomasyon():
     df_matches = veri_cek("matches")
 
+    if not df_matches.empty:
+        return
     
     df_users = veri_cek("users")
-    if df_users.empty: return
+    if df_users.empty: 
+        return
 
     df_users = df_users.sort_values(by=["points", "name"], ascending=[False, True]).reset_index(drop=True)
     n = len(df_users)
