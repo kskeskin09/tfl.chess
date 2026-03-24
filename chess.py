@@ -64,99 +64,84 @@ def kalan_sure_hesapla():
 # --- OTOMATİK LİG VE MAÇ SİSTEMİ ---
 def sessiz_otomasyon():
     df_matches = veri_cek("matches")
+
     
-    if df_matches.empty:
-        supabase.table("league").delete().neq("match_id", "0").execute()
+    df_users = veri_cek("users")
+    if df_users.empty: return
+
+    df_users = df_users.sort_values(by=["points", "name"], ascending=[False, True]).reset_index(drop=True)
+    n = len(df_users)
+    dagilim = [n // LIG_SAYISI] * LIG_SAYISI
+    for i in range(n % LIG_SAYISI): dagilim[-(i+1)] += 1
+
+    bas = 0
+    guncel_user_listesi = []
+    for i, miktar in enumerate(dagilim, 1):
+        grup = df_users.iloc[bas:bas+miktar]
+        lig_adi = LIG_ISIMLERI[i-1]
+        for _, u in grup.iterrows():
+            supabase.table("users").update({"league": lig_adi, "points": 0}).eq("name", u['name']).execute()
+            u['league'] = lig_adi
+            u['points'] = 0
+            guncel_user_listesi.append(u)
+        bas += miktar
+    
+    yeni_maclar = []
+    lig_baslangici = lig_baslangic_bul()
+    final_df = pd.DataFrame(guncel_user_listesi)
+    
+    for i, lig_adi in enumerate(LIG_ISIMLERI, 1):
+        oyuncular = final_df[final_df['league'] == lig_adi]['name'].tolist()
+        if len(oyuncular) < 2: continue
         
-        df_users = veri_cek("users")
-        if df_users.empty: return
+        oyuncu_listesi = oyuncular.copy()
 
-        df_users = df_users.sort_values(by=["points", "name"], ascending=[False, True]).reset_index(drop=True)
-        n = len(df_users)
-        dagilim = [n // LIG_SAYISI] * LIG_SAYISI
-        for i in range(n % LIG_SAYISI): dagilim[-(i+1)] += 1
+        # Tek sayıysa BYE ekle
+        bye_var = False
+        if len(oyuncu_listesi) % 2 == 1:
+            oyuncu_listesi.append("BYE")
+            bye_var = True
 
-        bas = 0
-        guncel_user_listesi = []
-        for i, miktar in enumerate(dagilim, 1):
-            grup = df_users.iloc[bas:bas+miktar]
-            lig_adi = LIG_ISIMLERI[i-1]
-            for _, u in grup.iterrows():
-                supabase.table("users").update({"league": lig_adi, "points": 0}).eq("name", u['name']).execute()
-                u['league'] = lig_adi
-                u['points'] = 0
-                guncel_user_listesi.append(u)
-            bas += miktar
-        
-        yeni_maclar = []
-        lig_baslangici = lig_baslangic_bul()
-        final_df = pd.DataFrame(guncel_user_listesi)
-        
-        for i, lig_adi in enumerate(LIG_ISIMLERI, 1):
-            oyuncular = final_df[final_df['league'] == lig_adi]['name'].tolist()
-            if len(oyuncular) < 2: continue
-            
-            oyuncu_listesi = oyuncular.copy()
+        oyuncu_sayisi = len(oyuncu_listesi)
 
-            # Tek sayıysa BYE ekle
-            bye_var = False
-            if len(oyuncu_listesi) % 2 == 1:
-                oyuncu_listesi.append("BYE")
-                bye_var = True
+        # TUR SAYISI
+        tur_sayisi = oyuncu_sayisi - 1
 
-            oyuncu_sayisi = len(oyuncu_listesi)
+        # TUR BAŞI SÜRE
+        toplam_saat = LIG_SURESI_GUN * 24
+        mac_basi_saat = max(1, toplam_saat // tur_sayisi)
 
-            # TUR SAYISI
-            if bye_var:
-                tur_sayisi = oyuncu_sayisi
-            else:
-                tur_sayisi = oyuncu_sayisi - 1
+        # ROUND ROBIN ALGORİTMASI
+        rotasyon = oyuncu_listesi[:]
 
-            # TUR BAŞI SÜRE
-            toplam_saat = LIG_SURESI_GUN * 24
-            mac_basi_saat = max(1, toplam_saat // tur_sayisi)
+        for tur in range(tur_sayisi):
+            for j in range(oyuncu_sayisi // 2):
 
-            # ROUND ROBIN ALGORİTMASI
-            rotasyon = oyuncu_listesi[:]
+                p1 = rotasyon[j]
+                p2 = rotasyon[oyuncu_sayisi - 1 - j]
 
-            for tur in range(tur_sayisi):
-                for j in range(oyuncu_sayisi // 2):
-                    # p1 için sınır kontrolü
-                    if j >= len(rotasyon):
-                        continue
-                    p1 = rotasyon[j]
+                start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
+                deadline = start_time + timedelta(hours=mac_basi_saat)
 
-                    # p2 için sınır kontrolü
-                    p2_index = oyuncu_sayisi - 1 - j
-                    if p2_index >= len(rotasyon):
-                        continue
-                    p2 = rotasyon[p2_index]
+                # ✅ BYE maçı
+                if "BYE" in (p1, p2):
+                    oyuncu = p1 if p2 == "BYE" else p2
 
-                    # BYE varsa maç oluşturma
-                    if "BYE" in (p1, p2):
-                        oyuncu = p1 if p2 == "BYE" else p2
+                    m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{oyuncu}BYE"
 
-                        m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{oyuncu}BYE"
+                    yeni_maclar.append({
+                        "match_id": m_id,
+                        "player1": oyuncu,
+                        "player2": "BYE",
+                        "league": lig_adi,
+                        "status": "BYE",
+                        "start_time": start_time.isoformat(),
+                        "deadline": deadline.isoformat()
+                    })
 
-                        start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
-                        deadline = start_time + timedelta(hours=mac_basi_saat)
-
-                        yeni_maclar.append({
-                            "match_id": m_id,
-                            "player1": oyuncu,
-                            "player2": "BYE",
-                            "league": lig_adi,
-                            "status": "BYE",
-                            "start_time": start_time.isoformat(),
-                            "deadline": deadline.isoformat()
-                        })
-                        continue
-
-        # ... maç ekleme kodu ...
-
+                # ✅ NORMAL MAÇ
+                else:
                     m_id = f"{str(i).zfill(2)}{str(tur+1).zfill(2)}{p1}vs{p2}"
-                    start_time = lig_baslangici + timedelta(hours=mac_basi_saat * tur)
-                    deadline = start_time + timedelta(hours=mac_basi_saat)
 
                     yeni_maclar.append({
                         "match_id": m_id,
@@ -168,11 +153,15 @@ def sessiz_otomasyon():
                         "deadline": deadline.isoformat()
                     })
 
-                # rotasyon (ilk oyuncu sabit)
-                rotasyon = [rotasyon[0]] + rotasyon[1:-1][-1:] + rotasyon[1:-1][:-1]
-                      
-        if yeni_maclar:
-            supabase.table("matches").insert(yeni_maclar).execute()
+            # rotasyon
+            sabit = rotasyon[0]
+            digerleri = rotasyon[1:]
+
+            digerleri = [digerleri[-1]] + digerleri[:-1]
+            rotasyon = [sabit] + digerleri
+                    
+    if yeni_maclar:
+        supabase.table("matches").insert(yeni_maclar).execute()
 
 # --- SONUÇ KAYDETME ---
 def sonucu_kaydet_veya_guncelle(match_id, oyuncu_adi, yeni_skor):
@@ -354,7 +343,9 @@ def ligleri_guncelle():
                     elif status == "Berabere":
                         p1_skor += BERABERLIK_PUANI
                         p2_skor += BERABERLIK_PUANI
-                        # Swap sıralama
+
+                    # swap sadece üstünlük varsa
+                    if p2_skor > p1_skor:
                         lig_kisileri.loc[[j, j+1]] = lig_kisileri.loc[[j+1, j]].values
 
         # Yükselme / düşme işlemi (ilk lig ve son lig hariç)
@@ -420,14 +411,20 @@ def sezonu_bitir_ve_yenile():
 # --- GİRİŞ VE PANEL ---
 sessiz_otomasyon()
 
+if kalan_sure_hesapla() != "Sezon Bitti!":
+    st.session_state.pop("sezon_reset", None)
+
 if kalan_sure_hesapla() == "Sezon Bitti!":
 
-    df_matches = veri_cek("matches")
+    if "sezon_reset" not in st.session_state:
 
-    # sadece bir kere çalışsın
-    if not df_matches.empty:
-        ligleri_guncelle()
-        sezonu_bitir_ve_yenile()
+        df_matches = veri_cek("matches")
+
+        if not df_matches.empty:
+            ligleri_guncelle()
+            sezonu_bitir_ve_yenile()
+
+        st.session_state["sezon_reset"] = True
         st.rerun()
 
 if 'giris_yapildi' not in st.session_state:
@@ -497,7 +494,14 @@ else:
         f"player1.eq.{st.session_state['kullanici_adi']},player2.eq.{st.session_state['kullanici_adi']}"
     ).execute()
 
-    df_m = pd.DataFrame(res.data)  # <- burada df_m oluşturuyoruz
+    df_m = pd.DataFrame(res.data or [])  # <- burada df_m oluşturuyoruz
+    if df_m.empty:
+        df_m = pd.DataFrame(columns=["player1","player2","status","match_id","league","deadline","start_time"])
+
+
+    if "player1" not in df_m.columns:
+        st.warning("Henüz maç oluşturulmamış")
+        st.stop()
 
     bm = df_m[
         ((df_m['player1'] == st.session_state['kullanici_adi']) | 
