@@ -1,10 +1,10 @@
 """
-auth.py — Custom authentication using bcrypt-hashed passwords.
+auth.py — Custom authentication using SHA-256 hashed passwords.
 No Supabase Auth is used; credentials are verified against the users table.
 """
 from __future__ import annotations
 
-import bcrypt
+import hashlib
 import streamlit as st
 
 from config import ADMIN_USERNAME
@@ -14,14 +14,14 @@ from db import get_user
 # ── Password utilities ────────────────────────────────────────────────────────
 
 def hash_password(plain: str) -> str:
-    """Return a bcrypt hash of a plaintext password (use when adding users)."""
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+    """Return a raw SHA-256 hash of a plaintext password."""
+    return hashlib.sha256(plain.encode()).hexdigest()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Check a plaintext password against a stored bcrypt hash."""
+    """Check a plaintext password against a stored SHA-256 hash."""
     try:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
+        return hashlib.sha256(plain.encode()).hexdigest() == hashed
     except Exception:
         return False
 

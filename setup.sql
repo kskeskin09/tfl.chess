@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS seasons (
 -- 2. Players
 CREATE TABLE IF NOT EXISTS users (
     name     TEXT    PRIMARY KEY,
-    password TEXT    NOT NULL,          -- bcrypt hashed
+    password TEXT    NOT NULL,          -- SHA-256 hashed
     phone    TEXT,
     points   INTEGER NOT NULL DEFAULT 0,
     league   TEXT    NOT NULL
@@ -52,8 +52,8 @@ ALTER TABLE matches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE results DISABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- Add a test user (password = "test1234" bcrypt-hashed).
--- Generate your own hashes with: python -c "import bcrypt; print(bcrypt.hashpw(b'yourpass', bcrypt.gensalt()).decode())"
+-- Add a test user (password = "test1234" SHA-256 hashed).
+-- Generate your own hashes with: python -c "import hashlib; print(hashlib.sha256(b'yourpass').hexdigest())"
 -- ============================================================
 -- INSERT INTO users (name, password, phone, points, league)
 -- VALUES ('Alice', '$2b$12$...', '+905001234567', 0, 'Liga A');
