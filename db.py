@@ -7,9 +7,24 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import streamlit as st
+from postgrest.exceptions import APIError
 from supabase import Client, create_client
 
 from config import POINTS_DRAW, POINTS_WIN, SEASON_ROW_ID
+
+
+def _db_error(exc: Exception) -> None:
+    """Show a clear, actionable error and stop execution."""
+    st.error(
+        "⚠️ **Database error** — could not reach Supabase.\n\n"
+        "**Possible causes:**\n"
+        "1. `SUPABASE_URL` / `SUPABASE_KEY` not set in Streamlit Cloud secrets.\n"
+        "2. Row-Level Security (RLS) is **enabled** on your tables — "
+        "run the RLS-disable statements in `setup.sql` or use the **service role** key.\n"
+        "3. The `setup.sql` schema has not been executed yet.\n\n"
+        f"Raw error: `{exc}`"
+    )
+    st.stop()
 
 
 # ── Client ────────────────────────────────────────────────────────────────────
@@ -23,8 +38,11 @@ def get_client() -> Client:
 # ── Season ────────────────────────────────────────────────────────────────────
 
 def get_season() -> Optional[dict]:
-    res = get_client().table("seasons").select("*").eq("id", SEASON_ROW_ID).execute()
-    return res.data[0] if res.data else None
+    try:
+        res = get_client().table("seasons").select("*").eq("id", SEASON_ROW_ID).execute()
+        return res.data[0] if res.data else None
+    except (APIError, Exception) as exc:
+        _db_error(exc)
 
 
 def upsert_season(data: dict) -> None:

@@ -154,7 +154,11 @@ def _check_and_auto_cycle() -> None:
     If the current season's end time has passed, automatically run
     end-of-season logic and start a fresh season.
     """
-    season = get_season()
+    try:
+        season = get_season()
+    except Exception:
+        return  # get_season() already calls st.stop() on APIError; this is belt-and-suspenders
+
     if not season or not season.get("active"):
         return
 

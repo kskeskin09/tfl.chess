@@ -42,13 +42,14 @@ CREATE TABLE IF NOT EXISTS results (
 );
 
 -- ============================================================
--- Row-Level Security: disable for simplicity (service-role key
--- bypasses RLS anyway, but uncomment if you use anon key only).
+-- Row-Level Security: DISABLED on all tables.
+-- Supabase enables RLS by default; without disabling it the
+-- anon key cannot read/write and you'll get APIError crashes.
 -- ============================================================
--- ALTER TABLE users   DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE matches DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE results DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE seasons DISABLE ROW LEVEL SECURITY;
+ALTER TABLE seasons DISABLE ROW LEVEL SECURITY;
+ALTER TABLE users   DISABLE ROW LEVEL SECURITY;
+ALTER TABLE matches DISABLE ROW LEVEL SECURITY;
+ALTER TABLE results DISABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- Add a test user (password = "test1234" bcrypt-hashed).
