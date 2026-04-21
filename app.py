@@ -125,6 +125,13 @@ def _inject_css() -> None:
         /* ── Headings ── */
         h1, h2, h3, h4 { color: #ffffff !important; }
 
+        /* ── Input fields & Forms ── */
+        div[data-baseweb="input"] {
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
         /* ── Sidebar logo text ── */
         .sidebar-title {
             font-size: 1.4rem;
@@ -159,17 +166,20 @@ def _check_and_auto_cycle() -> None:
     except Exception:
         return  # get_season() already calls st.stop() on APIError; this is belt-and-suspenders
 
+    needs_cycle = False
     if not season or not season.get("active"):
-        return
+        needs_cycle = True
+    else:
+        try:
+            end_dt = datetime.fromisoformat(season["season_end"])
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= end_dt:
+                needs_cycle = True
+        except Exception:
+            return
 
-    try:
-        end_dt = datetime.fromisoformat(season["season_end"])
-        if end_dt.tzinfo is None:
-            end_dt = end_dt.replace(tzinfo=timezone.utc)
-    except Exception:
-        return
-
-    if datetime.now(timezone.utc) < end_dt:
+    if not needs_cycle:
         return  # Season still running — nothing to do
 
     # ── Season has ended → cycle ──────────────────────────────────────────────
@@ -204,7 +214,7 @@ def _check_and_auto_cycle() -> None:
 
     upsert_season(
         {
-            "season_number": season.get("season_number", 1) + 1,
+            "season_number": season.get("season_number", 0) + 1 if season else 1,
             "season_start": now.isoformat(),
             "season_end": new_end.isoformat(),
             "active": True,
@@ -226,7 +236,7 @@ def _render_sidebar() -> None:
         st.divider()
 
         if not is_logged_in():
-            _render_login_form()
+            st.info("👋 Please log in from the main screen to see your dashboard.")
             return
 
         user = current_user()
@@ -268,23 +278,38 @@ def _render_sidebar() -> None:
             st.rerun()
 
 
-def _render_login_form() -> None:
-    st.markdown("#### 🔐 Login")
-    with st.form("login_form", clear_on_submit=False):
-        username = st.text_input("Username", placeholder="Enter your name…")
-        password = st.text_input("Password", type="password", placeholder="••••••••")
-        submitted = st.form_submit_button("Login", use_container_width=True)
+def _render_welcome() -> None:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown(
+            """
+            <div style='text-align:center; padding-bottom: 20px;'>
+                <div style='font-size:5rem; margin-bottom:10px;'>♟️</div>
+                <h1 style='color:#ffffff; font-size:2.5rem; font-weight:700;'>Chess League</h1>
+                <p style='color:#aaa; margin-bottom:30px;'>Sign in to view your matches and standings.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input("Username", placeholder="Enter your name…")
+            password = st.text_input("Password", type="password", placeholder="••••••••")
+            st.markdown("<br>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("Sign In", use_container_width=True, type="primary")
 
-    if submitted:
-        if not username or not password:
-            st.error("Please enter username and password.")
-        else:
-            ok, msg = try_login(username, password)
-            if ok:
-                st.success(msg)
-                st.rerun()
+        if submitted:
+            if not username or not password:
+                st.error("Please enter username and password.")
             else:
-                st.error(msg)
+                ok, msg = try_login(username, password)
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
 
 
 # ── Main content ──────────────────────────────────────────────────────────────
@@ -312,21 +337,7 @@ def _render_main() -> None:
     )
 
 
-def _render_welcome() -> None:
-    st.markdown(
-        """
-        <div style='text-align:center; padding: 80px 20px'>
-            <div style='font-size:5rem'>♟️</div>
-            <h1 style='font-size:2.8rem; margin-bottom:8px'>Chess League</h1>
-            <p style='color:#aaa; font-size:1.1rem; max-width:520px; margin:0 auto 32px'>
-                A multi-league chess management system with automated round-robin
-                scheduling, promotion &amp; relegation, and live standings.
-            </p>
-            <p style='color:#666'>← Log in using the sidebar to get started.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
 
 
 # ── App entry ─────────────────────────────────────────────────────────────────
