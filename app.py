@@ -167,8 +167,11 @@ def _check_and_auto_cycle() -> None:
         return  # get_season() already calls st.stop() on APIError; this is belt-and-suspenders
 
     needs_cycle = False
+    is_first_start = False
     if not season or not season.get("active"):
         needs_cycle = True
+        if not season:
+            is_first_start = True
     else:
         try:
             end_dt = datetime.fromisoformat(season["season_end"])
@@ -187,8 +190,25 @@ def _check_and_auto_cycle() -> None:
     from db import set_season_inactive
     set_season_inactive()
 
-    auto_complete_bye_matches()
-    apply_promotion_relegation(LEAGUE_NAMES, PROMOTION_RELEGATION_COUNT)
+    if is_first_start:
+        # Automatically distribute all players across leagues fairly for the very first season
+        import random
+        from scheduler import distribute_players
+        from db import set_user_league
+        
+        all_users = get_all_users()
+        player_names = [u["name"] for u in all_users]
+        random.shuffle(player_names)
+        
+        distribution = distribute_players(player_names, LEAGUE_NAMES)
+        for lg, p_list in distribution.items():
+            for p in p_list:
+                set_user_league(p, lg)
+    else:
+        # Normal cycle: finalize matches and apply promotion/relegation
+        auto_complete_bye_matches()
+        apply_promotion_relegation(LEAGUE_NAMES, PROMOTION_RELEGATION_COUNT)
+
     reset_all_points()
     clear_results()
     clear_matches()
